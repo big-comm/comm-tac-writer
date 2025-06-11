@@ -6,7 +6,7 @@ Reusable UI components for the TAC application
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GObject, Gdk
+from gi.repository import Gtk, Adw, GObject, Gdk, GLib
 
 from core.models import Paragraph, ParagraphType, DEFAULT_TEMPLATES
 from core.services import ProjectManager
@@ -363,6 +363,8 @@ class ParagraphEditor(Gtk.Box):
         self.text_view = None
         self.text_buffer = None
         self.is_dragging = False
+        self.format_button = None
+        self.format_popover = None
         
         self.set_spacing(8)
         self.add_css_class("card")
@@ -376,18 +378,23 @@ class ParagraphEditor(Gtk.Box):
         
         # Create header (which creates the popover)
         self._create_header()
-        
-        # Finalize format button setup
-        self._finalize_format_button()
-        
+
+        # TESTE: Detectar qual parágrafo está sendo criado
+        import time
+        current_time = time.time()
+        if not hasattr(self.__class__, '_paragraph_count'):
+            self.__class__._paragraph_count = 0
+        self.__class__._paragraph_count += 1
+        self.paragraph_index = self.__class__._paragraph_count
+
+        print(f"[DEBUG] Criando parágrafo {self.paragraph.id[:8]} tipo {self.paragraph.type.value}")
+
         # Setup drag and drop
         self._setup_drag_and_drop()
         
         # Apply initial formatting (now everything is guaranteed to exist)
         self._apply_formatting()
 
-        # Setup visual drag indicator
-        self._setup_drag_indicator()
     
     def _create_header(self):
         """Create paragraph header with type and controls"""
@@ -422,15 +429,18 @@ class ParagraphEditor(Gtk.Box):
         self.format_button.set_icon_name("format-text-bold-symbolic")
         self.format_button.set_tooltip_text("Format paragraph")
         self.format_button.add_css_class("flat")
+
+        # Create format popover for ALL paragraph types
+        self._create_format_popover()
+        self.format_button.set_popover(self.format_popover)
+
+        self.format_button.connect('activate', self._debug_button_click)
         
-        # Create format popover AFTER text_buffer is initialized
-        if self.text_buffer:
-            self._create_format_popover()
-            self.format_button.set_popover(self.format_popover)
-        else:
-            # If text_buffer not ready, disable button temporarily
-            self.format_button.set_sensitive(False)
-        
+        # DEBUG: Verificar estado do button
+        print(f"[DEBUG BUTTON] {self.paragraph.id[:8]} - Button criado: {self.format_button}")
+        print(f"[DEBUG BUTTON] {self.paragraph.id[:8]} - Popover associado: {self.format_button.get_popover()}")
+        print(f"[DEBUG BUTTON] {self.paragraph.id[:8]} - Button sensível: {self.format_button.get_sensitive()}")
+
         header_box.append(self.format_button)
         
         # Remove button
@@ -468,13 +478,6 @@ class ParagraphEditor(Gtk.Box):
         scrolled.set_child(self.text_view)
         
         self.append(scrolled)
-
-    def _finalize_format_button(self):
-        """Enable format button after text_buffer is ready"""
-        if hasattr(self, 'format_button') and self.text_buffer:
-            self._create_format_popover()
-            self.format_button.set_popover(self.format_popover)
-            self.format_button.set_sensitive(True)
             
     def _setup_drag_and_drop(self):
         """Setup drag and drop functionality for reordering paragraphs"""
@@ -506,11 +509,13 @@ class ParagraphEditor(Gtk.Box):
         
     def _setup_drag_indicator(self):
         """Setup visual drag indicator"""
-        # Add motion controller for hover effects
+        # Add motion controller for hover effects - COM EXCLUSÃO PARA HEADER
         motion_controller = Gtk.EventControllerMotion()
         motion_controller.connect('enter', self._on_mouse_enter)
         motion_controller.connect('leave', self._on_mouse_leave)
-        self.add_controller(motion_controller)
+        
+        # CORREÇÃO: Não adicionar ao widget inteiro, só à área de texto
+        self.text_view.add_controller(motion_controller)
         
         # Set cursor to indicate draggable
         self.set_cursor_from_name("grab")
@@ -592,11 +597,9 @@ class ParagraphEditor(Gtk.Box):
         """Get display label for paragraph type"""
         type_labels = {
             ParagraphType.INTRODUCTION: "Introduction",
-            ParagraphType.TOPIC: "Topic Sentence", 
             ParagraphType.ARGUMENT: "Argument",
             ParagraphType.QUOTE: "Quote",
-            ParagraphType.CONCLUSION: "Conclusion",
-            ParagraphType.TRANSITION: "Transition"
+            ParagraphType.CONCLUSION: "Conclusion"
         }
         return type_labels.get(self.paragraph.type, "Paragraph")
     
@@ -644,11 +647,7 @@ class ParagraphEditor(Gtk.Box):
         # Apply margins
         left_margin = formatting.get('indent_left', 0.0)
         right_margin = formatting.get('indent_right', 0.0)
-        
-        if self.paragraph.type == ParagraphType.QUOTE:
-            left_margin += 4.0
-            right_margin += 4.0
-        
+
         self.text_view.set_left_margin(int(left_margin * 28))
         self.text_view.set_right_margin(int(right_margin * 28))
     
@@ -708,8 +707,21 @@ class ParagraphEditor(Gtk.Box):
     
     def _create_format_popover(self):
         """Create format popover with all formatting options"""
+        print(f"[DEBUG POPOVER] Iniciando criação para parágrafo {self.paragraph.id[:8]}")
+        
+        # Prevent multiple creation
+        if hasattr(self, 'format_popover') and self.format_popover:
+            print(f"[DEBUG POPOVER] {self.paragraph.id[:8]} - Popover já existe, saindo")
+            return
+            
         self.format_popover = Gtk.Popover()
         self.format_popover.set_size_request(320, 400)
+        self.format_popover.set_autohide(True)
+        self.format_popover.set_has_arrow(True)
+        self.format_popover.set_cascade_popdown(True)
+        
+        # CORREÇÃO: Adicionar CSS para garantir z-index alto
+        self.format_popover.add_css_class("format-popover-high-z")
         
         # Main box
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -721,31 +733,82 @@ class ParagraphEditor(Gtk.Box):
         # Font section
         font_group = Adw.PreferencesGroup()
         font_group.set_title("Font")
-        
+
         # Font family
         self.font_combo = Gtk.ComboBoxText()
-        fonts = ["Liberation Sans", "Liberation Serif", "Times New Roman", "Arial", "Ubuntu"]
-        for font in fonts:
-            self.font_combo.append_text(font)
+
+        # Get system fonts
+        try:
+            # Method 1: Try PangoCairo
+            gi.require_version('PangoCairo', '1.0')
+            from gi.repository import PangoCairo
+            font_map = PangoCairo.font_map_get_default()
+            families = font_map.list_families()
+            
+        except:
+            try:
+                # Method 2: Try Pango context
+                from gi.repository import Pango
+                context = Pango.Context()
+                font_map = context.get_font_map()
+                families = font_map.list_families()
+                
+            except:
+                try:
+                    # Method 3: Use fontconfig command
+                    import subprocess
+                    result = subprocess.run(['fc-list', ':', 'family'], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        font_names = set()
+                        for line in result.stdout.strip().split('\n'):
+                            if line:
+                                family = line.split(',')[0].strip()
+                                font_names.add(family)
+                        
+                        font_names = sorted(list(font_names))
+                        for font_name in font_names:
+                            self.font_combo.append_text(font_name)
+                        families = None  # Skip the normal processing below
+                    else:
+                        families = []
+                except:
+                    families = []
+
+        # Process Pango families if we got them
+        if families is not None:
+            font_names = []
+            for family in families:
+                font_names.append(family.get_name())
+            
+            font_names.sort()
+            for font_name in font_names:
+                self.font_combo.append_text(font_name)
+
+        # If still no fonts, use fallback
+        model = self.font_combo.get_model()
+        if model is None or model.iter_n_children(None) == 0:
+            print("Using fallback fonts in ParagraphEditor")
+            basic_fonts = ["Liberation Sans", "Liberation Serif", "DejaVu Sans", "Ubuntu", "Cantarell"]
+            for font in basic_fonts:
+                self.font_combo.append_text(font)
+
         self.font_combo.set_active(0)
-        self.font_combo.connect('changed', self._on_popover_font_changed)
-        
+
         font_row = Adw.ActionRow()
         font_row.set_title("Font Family")
         font_row.add_suffix(self.font_combo)
         font_group.add(font_row)
-        
+
         # Font size
         size_adj = Gtk.Adjustment(value=12, lower=8, upper=72, step_increment=1)
         self.size_spin = Gtk.SpinButton()
         self.size_spin.set_adjustment(size_adj)
-        self.size_spin.connect('value-changed', self._on_popover_size_changed)
-        
+
         size_row = Adw.ActionRow()
         size_row.set_title("Font Size")
         size_row.add_suffix(self.size_spin)
         font_group.add(size_row)
-        
+
         main_box.append(font_group)
         
         # Style section
@@ -756,7 +819,6 @@ class ParagraphEditor(Gtk.Box):
         self.bold_switch = Gtk.Switch()
         self.bold_switch.set_valign(Gtk.Align.CENTER)
         self.bold_switch.set_halign(Gtk.Align.END)
-        self.bold_switch.connect('notify::active', self._on_popover_bold_changed)
         bold_row = Adw.ActionRow()
         bold_row.set_title("Bold")
         bold_row.add_suffix(self.bold_switch)
@@ -767,7 +829,6 @@ class ParagraphEditor(Gtk.Box):
         self.italic_switch = Gtk.Switch()
         self.italic_switch.set_valign(Gtk.Align.CENTER)
         self.italic_switch.set_halign(Gtk.Align.END)
-        self.italic_switch.connect('notify::active', self._on_popover_italic_changed)
         italic_row = Adw.ActionRow()
         italic_row.set_title("Italic")
         italic_row.add_suffix(self.italic_switch)
@@ -778,7 +839,6 @@ class ParagraphEditor(Gtk.Box):
         self.underline_switch = Gtk.Switch()
         self.underline_switch.set_valign(Gtk.Align.CENTER)
         self.underline_switch.set_halign(Gtk.Align.END)
-        self.underline_switch.connect('notify::active', self._on_popover_underline_changed)
         underline_row = Adw.ActionRow()
         underline_row.set_title("Underline")
         underline_row.add_suffix(self.underline_switch)
@@ -796,7 +856,6 @@ class ParagraphEditor(Gtk.Box):
         self.left_spin = Gtk.SpinButton()
         self.left_spin.set_adjustment(left_adj)
         self.left_spin.set_digits(1)
-        self.left_spin.connect('value-changed', self._on_popover_margin_changed)
         
         left_row = Adw.ActionRow()
         left_row.set_title("Left Margin (cm)")
@@ -808,7 +867,6 @@ class ParagraphEditor(Gtk.Box):
         self.right_spin = Gtk.SpinButton()
         self.right_spin.set_adjustment(right_adj)
         self.right_spin.set_digits(1)
-        self.right_spin.connect('value-changed', self._on_popover_margin_changed)
         
         right_row = Adw.ActionRow()
         right_row.set_title("Right Margin (cm)")
@@ -824,19 +882,29 @@ class ParagraphEditor(Gtk.Box):
 
     def _load_popover_formatting(self):
         """Load current formatting into popover controls"""
+        print(f"[DEBUG FORMAT] Carregando formatação para {self.paragraph.id[:8]}")
+        
         # Guard clause: ensure popover controls exist
         if not hasattr(self, 'font_combo') or not hasattr(self, 'size_spin'):
-            print("Warning: Cannot load popover formatting - controls not initialized yet")
+            print(f"[DEBUG FORMAT] {self.paragraph.id[:8]} - CONTROLES NÃO EXISTEM! font_combo={hasattr(self, 'font_combo')}, size_spin={hasattr(self, 'size_spin')}")
             return
+        
+        print(f"[DEBUG FORMAT] {self.paragraph.id[:8]} - Controles OK, prosseguindo...")
         
         formatting = self.paragraph.formatting
         
         # Font
         font_family = formatting.get('font_family', 'Liberation Sans')
-        for i in range(self.font_combo.get_model().iter_n_children(None)):
-            if self.font_combo.get_active_text() == font_family:
-                self.font_combo.set_active(i)
-                break
+        model = self.font_combo.get_model()
+        if model:
+            for i in range(model.iter_n_children(None)):
+                # Get the text at position i
+                iter_val = model.iter_nth_child(None, i)
+                if iter_val:
+                    text = model.get_value(iter_val, 0)
+                    if text == font_family:
+                        self.font_combo.set_active(i)
+                        break
         
         self.size_spin.set_value(formatting.get('font_size', 12))
         
@@ -848,12 +916,24 @@ class ParagraphEditor(Gtk.Box):
         # Margins
         self.left_spin.set_value(formatting.get('indent_left', 0.0))
         self.right_spin.set_value(formatting.get('indent_right', 0.0))
+        
+        print(f"[DEBUG FORMAT] {self.paragraph.id[:8]} - Conectando handlers...")
+        # Now connect handlers after loading values
+        self.font_combo.connect('changed', self._on_popover_font_changed)
+        self.size_spin.connect('value-changed', self._on_popover_size_changed) 
+        self.bold_switch.connect('notify::active', self._on_popover_bold_changed)
+        self.italic_switch.connect('notify::active', self._on_popover_italic_changed)
+        self.underline_switch.connect('notify::active', self._on_popover_underline_changed)
+        self.left_spin.connect('value-changed', self._on_popover_margin_changed)
+        self.right_spin.connect('value-changed', self._on_popover_margin_changed)
+        print(f"[DEBUG FORMAT] {self.paragraph.id[:8]} - Handlers conectados!")
 
     def _on_popover_font_changed(self, combo):
         """Handle font family change in popover"""
         font_family = combo.get_active_text()
-        self.paragraph.formatting['font_family'] = font_family
-        self._apply_formatting()
+        if font_family:
+            self.paragraph.formatting['font_family'] = font_family
+            self._apply_formatting()
 
     def _on_popover_size_changed(self, spin):
         """Handle font size change in popover"""
@@ -881,7 +961,19 @@ class ParagraphEditor(Gtk.Box):
         self.paragraph.formatting['indent_left'] = self.left_spin.get_value()
         self.paragraph.formatting['indent_right'] = self.right_spin.get_value()
         self._apply_formatting()
+        
+    def _on_popover_closed(self, popover):
+        """Handle popover closed event"""
+        # Ensure popover is properly hidden
+        popover.popdown()
 
+    def _debug_button_click(self, button):
+        print(f"[DEBUG CLICK] {self.paragraph.id[:8]} - MenuButton ativado!")
+        print(f"[DEBUG CLICK] {self.paragraph.id[:8]} - Popover: {button.get_popover()}")
+        if button.get_popover():
+            print(f"[DEBUG CLICK] {self.paragraph.id[:8]} - Popover existe, deveria abrir...")
+        else:
+            print(f"[DEBUG CLICK] {self.paragraph.id[:8]} - POPOVER É NONE!")
 
 class TextEditor(Gtk.Box):
     """Advanced text editor component"""

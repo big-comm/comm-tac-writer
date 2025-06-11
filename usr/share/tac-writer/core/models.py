@@ -12,11 +12,9 @@ from enum import Enum
 class ParagraphType(Enum):
     """Types of paragraphs in academic writing"""
     INTRODUCTION = "introduction"      # Introduction paragraph
-    TOPIC = "topic"                    # Topic sentence paragraph
     ARGUMENT = "argument"              # Argumentation paragraph
     QUOTE = "quote"                    # Quote paragraph (renamed from argument_quote)
     CONCLUSION = "conclusion"          # Conclusion paragraph
-    TRANSITION = "transition"          # Transition paragraph
 
 
 class Paragraph:
@@ -46,13 +44,13 @@ class Paragraph:
         }
         
         # Special formatting for quotes
-        if paragraph_type == ParagraphType.QUOTE:
-            self.formatting.update({
-                'indent_left': 4.0,      # 4cm as requested
-                'indent_right': 4.0,     # 4cm right indent too
-                'italic': True,
-                'font_size': 11
-            })
+        # if paragraph_type == ParagraphType.QUOTE:
+        #     self.formatting.update({
+        #         'indent_left': 4.0,      # 4cm as requested
+        #         'indent_right': 4.0,     # 4cm right indent too
+        #         'italic': True,
+        #         'font_size': 11
+        #     })
     
     def update_content(self, content: str) -> None:
         """Update paragraph content"""

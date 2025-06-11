@@ -122,13 +122,13 @@ class TacApplication(Adw.Application):
             border: 1px solid alpha(@accent_color, 0.3);
             transition: all 200ms ease;
         }
-        
+
         .card.dragging {
             opacity: 0.6;
             transform: scale(0.98);
             transition: all 150ms ease;
         }
-        
+
         .card.drop-target {
             background: alpha(@accent_color, 0.1);
             border: 2px solid @accent_color;

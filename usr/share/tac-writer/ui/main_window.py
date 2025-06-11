@@ -278,10 +278,8 @@ class MainWindow(Adw.ApplicationWindow):
         
         paragraph_types = [
             ("Introduction", ParagraphType.INTRODUCTION),
-            ("Topic Sentence", ParagraphType.TOPIC), 
             ("Argument", ParagraphType.ARGUMENT),
-            ("Quote", ParagraphType.QUOTE),  # Updated name
-            ("Transition", ParagraphType.TRANSITION),
+            ("Quote", ParagraphType.QUOTE),
             ("Conclusion", ParagraphType.CONCLUSION),
         ]
         
@@ -295,6 +293,10 @@ class MainWindow(Adw.ApplicationWindow):
     
     def _refresh_paragraphs(self):
         """Refresh the paragraphs display"""
+        print(f"[DEBUG REFRESH] _refresh_paragraphs() chamado!")
+        import traceback
+        traceback.print_stack()
+        
         if not self.current_project:
             return
         
@@ -305,13 +307,19 @@ class MainWindow(Adw.ApplicationWindow):
             self.paragraphs_box.remove(child)
             child = next_child
         
-        # Add paragraphs
-        for paragraph in self.current_project.paragraphs:
-            paragraph_editor = ParagraphEditor(paragraph)
-            paragraph_editor.connect('content-changed', self._on_paragraph_changed)
-            paragraph_editor.connect('remove-requested', self._on_paragraph_remove_requested)
-            paragraph_editor.connect('paragraph-reorder', self._on_paragraph_reorder)
-            self.paragraphs_box.append(paragraph_editor)
+        # Add paragraphs with delay
+        for i, paragraph in enumerate(self.current_project.paragraphs):
+            def create_paragraph(p, delay):
+                def create():
+                    paragraph_editor = ParagraphEditor(p)
+                    paragraph_editor.connect('content-changed', self._on_paragraph_changed)
+                    paragraph_editor.connect('remove-requested', self._on_paragraph_remove_requested)
+                    paragraph_editor.connect('paragraph-reorder', self._on_paragraph_reorder)
+                    self.paragraphs_box.append(paragraph_editor)
+                    return False
+                GLib.timeout_add(delay, create)
+            
+            create_paragraph(paragraph, i * 100)  # 100ms delay entre cada
     
     def _update_header_for_view(self, view_name: str):
         """Update header bar for current view"""
@@ -475,6 +483,10 @@ class MainWindow(Adw.ApplicationWindow):
                     if project:
                         self.current_project = project
                         self._show_editor_view()
+                        
+                        # Update sidebar to show all projects including this one
+                        self.project_list.refresh_projects()
+                        
                         self._show_toast(f"Opened project: {project.name}")
                     else:
                         self._show_toast("Failed to open project", Adw.ToastPriority.HIGH)
@@ -492,6 +504,10 @@ class MainWindow(Adw.ApplicationWindow):
         
         if success:
             self._show_toast("Project saved successfully")
+            
+            # Update sidebar to reflect changes
+            self.project_list.refresh_projects()
+            
             # Update recent projects
             project_path = str(self.project_manager.get_project_path(self.current_project))
             self.config.add_recent_project(project_path)
@@ -536,16 +552,24 @@ class MainWindow(Adw.ApplicationWindow):
             return
         
         paragraph = self.current_project.add_paragraph(paragraph_type)
-        self._refresh_paragraphs()
-        self._update_header_for_view("editor")
         
-        # Focus the new paragraph
-        # TODO: Scroll to and focus new paragraph
+        # Ao invés de _refresh_paragraphs(), apenas adicionar o novo:
+        paragraph_editor = ParagraphEditor(paragraph)
+        paragraph_editor.connect('content-changed', self._on_paragraph_changed)
+        paragraph_editor.connect('remove-requested', self._on_paragraph_remove_requested)
+        paragraph_editor.connect('paragraph-reorder', self._on_paragraph_reorder)
+        self.paragraphs_box.append(paragraph_editor)
+        
+        self._update_header_for_view("editor")
     
     def _on_project_created(self, dialog, project):
         """Handle new project creation"""
         self.current_project = project
         self._show_editor_view()
+        
+        # Update sidebar to show new project
+        self.project_list.refresh_projects()
+        
         self._show_toast(f"Created project: {project.name}")
     
     def _show_toast(self, message: str, priority=Adw.ToastPriority.NORMAL):
